@@ -1,0 +1,8 @@
+{
+  "messages": [
+    { "user": "priya", "text": "heads up — Acme's integration is throwing 429s again since their batch-sync launch this morning" },
+    { "user": "dev", "text": "yeah I see it in the gateway logs, they're blowing through the 60/min cap within the first few seconds of every sync window" },
+    { "user": "marco", "text": "their contract upgrade went through last week, we owe them higher throughput anyway" },
+    { "user": "priya", "text": "what number are we comfortable with? gateway can take a lot more than what we allow today" }
+  ]
+}

@@ -12,6 +12,7 @@
     "inspect": "npx @modelcontextprotocol/inspector tsx src/mcp-server/index.ts",
     "eval": "tsx src/reconciliation/eval.ts",
     "slack": "tsx src/slack/app.ts",
+    "demo": "rm -f vouch.db && tsx src/store/seed.ts && tsx scripts/replay.ts fixtures/demo-buildup.json --delay 1500 && tsx src/slack/app.ts",
     "replay": "tsx scripts/replay.ts"
   },
   "dependencies": {
