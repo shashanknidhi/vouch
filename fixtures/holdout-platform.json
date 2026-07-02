@@ -1,0 +1,70 @@
+{
+  "channel": "platform",
+  "sections": [
+    {
+      "id": "db-migrations",
+      "title": "DB Migrations",
+      "current_value": "Migrations run automatically on deploy via migrate-bot. Destructive migrations require a backup snapshot first. Max migration duration: 5 minutes."
+    },
+    {
+      "id": "feature-flags",
+      "title": "Feature Flags",
+      "current_value": "Flags are managed in LaunchDarkly. Stale flags are removed after 90 days. Every flag needs an owner and an expiry date."
+    },
+    {
+      "id": "ci-pipeline",
+      "title": "CI Pipeline",
+      "current_value": "CI runs on Buildkite. PRs need a green build plus 1 review to merge. Flaky tests are quarantined after 3 failures in a week."
+    }
+  ],
+  "messages": [
+    { "ts": "2001", "user": "ana", "text": "the orders deploy is stuck again, migrate-bot has been running for 11 minutes", "label": null },
+    { "ts": "2002", "user": "raj", "text": "that migration adds an index on a 200M row table, it was never going to fit in 5 min", "label": null },
+    { "ts": "2003", "user": "ana", "text": "should we bump max migration duration to 10 min?", "label": null },
+    { "ts": "2004", "user": "kofi", "text": "band-aid. the real problem is migrations blocking deploys at all", "label": null },
+    { "ts": "2005", "user": "raj", "text": "what if migrations ran as their own pipeline step before the deploy instead of during it?", "label": null },
+    { "ts": "2006", "user": "ana", "text": "we tried that at my last job, worked well", "label": null },
+    { "ts": "2007", "user": "kofi", "text": "ok, decision: migrations move to a separate pre-deploy pipeline step, no longer run automatically during deploy. raj can you make the change", "label": { "section_id": "db-migrations" } },
+    { "ts": "2008", "user": "raj", "text": "on it", "label": null },
+    { "ts": "2009", "user": "mei", "text": "morning! did I miss anything fun", "label": null },
+    { "ts": "2010", "user": "ana", "text": "only kofi redesigning the deploy pipeline before 9am", "label": null },
+    { "ts": "2011", "user": "raj", "text": "merged the pipeline change, migrations are their own step now", "label": null },
+    { "ts": "2012", "user": "mei", "text": "on flags — the audit found 74 stale flags. some are two years old", "label": null },
+    { "ts": "2013", "user": "kofi", "text": "74?? our policy says 90 days", "label": null },
+    { "ts": "2014", "user": "mei", "text": "nobody enforces it. I propose we drop the window to 30 days AND have the bot auto-open cleanup PRs", "label": null },
+    { "ts": "2015", "user": "ana", "text": "30 feels aggressive, some flags legitimately live for a quarter", "label": null },
+    { "ts": "2016", "user": "mei", "text": "those get an extended expiry from their owner, that's what the expiry field is for", "label": null },
+    { "ts": "2017", "user": "kofi", "text": "discussed with mei offline — decided in the infra sync: stale flag window drops from 90 to 30 days, extensions need owner sign-off", "label": { "section_id": "feature-flags" } },
+    { "ts": "2018", "user": "mei", "text": "🎉 cleanup PRs start monday", "label": null },
+    { "ts": "2019", "user": "raj", "text": "hm, seeing something weird — deploys now take twice as long since migrations are a separate step, the runner spins up twice", "label": null },
+    { "ts": "2020", "user": "ana", "text": "ugh. can we share the runner between steps?", "label": null },
+    { "ts": "2021", "user": "raj", "text": "not on our buildkite plan", "label": null },
+    { "ts": "2022", "user": "kofi", "text": "not worth it then. rolling that back — migrations go back to running automatically on deploy like before, raj revert the pipeline change", "label": { "section_id": "db-migrations" } },
+    { "ts": "2023", "user": "raj", "text": "reverted 🫡", "label": null },
+    { "ts": "2024", "user": "ana", "text": "so about my original question, the 5 min cap still bites us on big tables", "label": null },
+    { "ts": "2025", "user": "kofi", "text": "let's collect data on actual migration durations for a week and revisit", "label": null },
+    { "ts": "2026", "user": "mei", "text": "the checkout test failed 3 times today alone. quarantine rules say a week but this thing is clearly broken", "label": null },
+    { "ts": "2027", "user": "raj", "text": "propose we quarantine after 2 failures in 48h instead of 3 in a week", "label": null },
+    { "ts": "2028", "user": "ana", "text": "sure, let's just YOLO everything straight to prod while we're at it, tests are optional anyway 🙃", "label": null },
+    { "ts": "2029", "user": "raj", "text": "ana 😂 I'm serious though", "label": null },
+    { "ts": "2030", "user": "kofi", "text": "approved 👍", "label": { "section_id": "ci-pipeline" } },
+    { "ts": "2031", "user": "mei", "text": "quarantining checkout test now, finally", "label": null },
+    { "ts": "2032", "user": "ana", "text": "separate thing — the schema-touching PRs keep sneaking in with a single rubber-stamp review", "label": null },
+    { "ts": "2033", "user": "raj", "text": "the payments incident last month was exactly that", "label": null },
+    { "ts": "2034", "user": "kofi", "text": "options: require 2 reviews on schema PRs, or a mandatory DBA review, or a lint gate on migration files", "label": null },
+    { "ts": "2035", "user": "ana", "text": "DBA review means waiting on the one DBA we have", "label": null },
+    { "ts": "2036", "user": "kofi", "text": "yeah let's go with 2 reviews for schema-touching PRs then, everything else stays at 1", "label": { "section_id": "ci-pipeline" } },
+    { "ts": "2037", "user": "mei", "text": "will the branch protection rule handle path-based review counts?", "label": null },
+    { "ts": "2038", "user": "raj", "text": "with a CODEOWNERS trick, yes. I'll set it up", "label": null },
+    { "ts": "2039", "user": "ana", "text": "unrelated, we're adopting pnpm across the platform repos, npm installs are killing CI time. already agreed with the leads", "label": null },
+    { "ts": "2040", "user": "mei", "text": "bless. npm install is 40% of our build time", "label": null },
+    { "ts": "2041", "user": "kofi", "text": "we'll probably need to revisit the flag expiry policy someday, 30 days will generate noise", "label": null },
+    { "ts": "2042", "user": "mei", "text": "someday™", "label": null },
+    { "ts": "2043", "user": "raj", "text": "does anyone remember why destructive migrations need a snapshot? we have PITR on all databases now", "label": null },
+    { "ts": "2044", "user": "kofi", "text": "history. worth questioning but not deciding in a random thread — adding it to the infra sync agenda", "label": null },
+    { "ts": "2045", "user": "ana", "text": "the checkout test is green after quarantine + fix btw", "label": null },
+    { "ts": "2046", "user": "mei", "text": "week's migration duration data is in: p99 is 4m50s. that 5 min cap is one big table away from biting again", "label": null },
+    { "ts": "2047", "user": "kofi", "text": "ok, data's convincing — max migration duration goes to 15 minutes, update migrate-bot's timeout", "label": { "section_id": "db-migrations" } },
+    { "ts": "2048", "user": "raj", "text": "done and done", "label": null }
+  ]
+}
