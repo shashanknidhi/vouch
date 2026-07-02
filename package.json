@@ -10,10 +10,13 @@
     "seed": "tsx src/store/seed.ts",
     "mcp": "tsx src/mcp-server/index.ts",
     "inspect": "npx @modelcontextprotocol/inspector tsx src/mcp-server/index.ts",
-    "eval": "tsx src/reconciliation/eval.ts"
+    "eval": "tsx src/reconciliation/eval.ts",
+    "slack": "tsx src/slack/app.ts",
+    "replay": "tsx scripts/replay.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.0",
+    "@slack/bolt": "^4.7.3",
     "better-sqlite3": "^11.5.0",
     "openai": "^6.45.0",
     "zod": "^3.23.8"
