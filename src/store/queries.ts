@@ -52,6 +52,25 @@ export function getBindingByChannel(slackChannelId: string) {
     .get(slackChannelId) as { section_id: string; slack_channel_id: string } | undefined;
 }
 
+export function getSectionsByChannel(slackChannelId: string) {
+  return db
+    .prepare(
+      `SELECT s.* FROM sections s JOIN bindings b ON b.section_id = s.id
+       WHERE b.slack_channel_id = ?`,
+    )
+    .all(slackChannelId) as Section[];
+}
+
+export function listOpenThreadNotes() {
+  return (
+    db
+      .prepare("SELECT suggested_note FROM threads WHERE status = 'open'")
+      .all() as { suggested_note: string | null }[]
+  )
+    .map((r) => r.suggested_note)
+    .filter((n): n is string => n !== null);
+}
+
 export function setFreshness(sectionId: string, freshnessState: FreshnessState) {
   db.prepare("UPDATE sections SET freshness_state = ? WHERE id = ?").run(
     freshnessState,
