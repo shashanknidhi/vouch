@@ -6,11 +6,21 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "seed": "tsx src/store/seed.ts",
+    "mcp": "tsx src/mcp-server/index.ts",
+    "inspect": "npx @modelcontextprotocol/inspector tsx src/mcp-server/index.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.0",
+    "better-sqlite3": "^11.5.0",
+    "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@modelcontextprotocol/inspector": "^0.22.0",
+    "@types/better-sqlite3": "^7.6.11",
+    "@types/node": "^22.0.0",
     "tsx": "^4.19.0",
-    "typescript": "^5.6.0",
-    "@types/node": "^22.0.0"
+    "typescript": "^5.6.0"
   }
 }
