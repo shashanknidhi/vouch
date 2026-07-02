@@ -71,8 +71,24 @@ export async function detectDecision(
   });
 
   const raw = res.choices[0]?.message?.content ?? "";
-  const match = raw.match(/\{[\s\S]*\}/);
-  if (!match) throw new Error(`no JSON in model output: ${raw}`);
+  let match = raw.match(/\{[\s\S]*\}/);
+  if (!match) {
+    // ponytail: single blind retry — Ollama occasionally returns empty content
+    const retry = await llm.chat.completions.create({
+      model: MODEL,
+      temperature: 0,
+      messages: [
+        { role: "system", content: SYSTEM_PROMPT },
+        {
+          role: "user",
+          content: `## Watched sections\n${sectionsBlock}${threadsBlock}\n\n## Recent context\n${contextBlock}\n\n## TARGET message\n[${target.user}]: ${target.text}`,
+        },
+      ],
+    });
+    const retryRaw = retry.choices[0]?.message?.content ?? "";
+    match = retryRaw.match(/\{[\s\S]*\}/);
+    if (!match) throw new Error(`no JSON in model output after retry: ${retryRaw}`);
+  }
   const parsed = JSON.parse(match[0]);
 
   return {

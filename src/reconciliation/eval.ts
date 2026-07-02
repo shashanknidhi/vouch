@@ -13,9 +13,8 @@ interface Fixture {
   messages: FixtureMessage[];
 }
 
-const fixture: Fixture = JSON.parse(
-  readFileSync(new URL("../../fixtures/channel-history.json", import.meta.url), "utf8"),
-);
+const fixturePath = process.argv[2] ?? new URL("../../fixtures/channel-history.json", import.meta.url);
+const fixture: Fixture = JSON.parse(readFileSync(fixturePath, "utf8"));
 
 let tp = 0;
 let fp = 0;
