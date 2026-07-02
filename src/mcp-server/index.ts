@@ -6,6 +6,7 @@ import {
   setFreshness,
   openThread,
   resolveThread,
+  dismissThread,
   writeProvenance,
 } from "../store/queries.js";
 
@@ -45,15 +46,17 @@ server.registerTool(
       source_signal: z.string().optional(),
       assignee: z.string().optional(),
       suggested_note: z.string().optional(),
+      proposed_value: z.string().optional(),
     },
   },
-  async ({ section_id, source_signal, assignee, suggested_note }) =>
+  async ({ section_id, source_signal, assignee, suggested_note, proposed_value }) =>
     json(
       openThread({
         sectionId: section_id,
         sourceSignal: source_signal,
         assignee,
         suggestedNote: suggested_note,
+        proposedValue: proposed_value,
       }),
     ),
 );
@@ -61,10 +64,26 @@ server.registerTool(
 server.registerTool(
   "resolve_thread",
   {
-    description: "Resolve a thread with a confirmed resolution note and flip its section to fresh",
-    inputSchema: { thread_id: z.string(), resolution_note: z.string() },
+    description:
+      "Resolve a thread with a confirmed resolution note, optionally write the new doc text to the section, and flip it to fresh",
+    inputSchema: {
+      thread_id: z.string(),
+      resolution_note: z.string(),
+      new_value: z.string().optional(),
+    },
   },
-  async ({ thread_id, resolution_note }) => json(resolveThread(thread_id, resolution_note)),
+  async ({ thread_id, resolution_note, new_value }) =>
+    json(resolveThread(thread_id, resolution_note, new_value)),
+);
+
+server.registerTool(
+  "dismiss_thread",
+  {
+    description:
+      "Dismiss a thread (false alarm or reverted change): section back to fresh, doc text untouched, no provenance",
+    inputSchema: { thread_id: z.string() },
+  },
+  async ({ thread_id }) => json(dismissThread(thread_id)),
 );
 
 server.registerTool(

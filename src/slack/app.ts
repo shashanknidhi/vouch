@@ -1,9 +1,15 @@
 import bolt from "@slack/bolt";
 import { detectDecision, type ChannelMessage } from "../reconciliation/detect.js";
 import {
+  getSection,
   getSectionsByChannel,
+  getThread,
   listOpenThreadNotes,
   openThread,
+  resolveThread,
+  dismissThread,
+  writeProvenance,
+  type Thread,
 } from "../store/queries.js";
 
 try {
@@ -91,12 +97,188 @@ app.event("message", async ({ event }) => {
     sourceSignal: `slack://${msg.channel}/${msg.ts}`,
     assignee: detection.author ?? author,
     suggestedNote: detection.suggested_note ?? undefined,
+    proposedValue: detection.proposed_value ?? undefined,
   });
 
   console.log(
-    `🟡 thread ${thread.id} opened — section '${detection.section_id}' now pending\n` +
-      `   would DM ${thread.assignee}: "${thread.suggested_note}"`,
+    `🟡 thread ${thread.id} opened — section '${detection.section_id}' now pending`,
   );
+  await sendNudge(thread);
+});
+
+function nudgeBlocks(thread: Thread) {
+  const section = getSection(thread.section_id);
+  return [
+    {
+      type: "section" as const,
+      text: {
+        type: "mrkdwn" as const,
+        text:
+          `*${section?.section.title ?? thread.section_id}* looks stale.\n` +
+          `${thread.suggested_note ?? "A change was detected."}`,
+      },
+    },
+    ...(thread.proposed_value
+      ? [
+          {
+            type: "section" as const,
+            text: {
+              type: "mrkdwn" as const,
+              text: `*Doc will be updated to:*\n>${thread.proposed_value.replaceAll("\n", "\n>")}`,
+            },
+          },
+        ]
+      : []),
+    {
+      type: "actions" as const,
+      elements: [
+        {
+          type: "button" as const,
+          action_id: "vouch_accept",
+          style: "primary" as const,
+          text: { type: "plain_text" as const, text: "Accept" },
+          value: thread.id,
+        },
+        {
+          type: "button" as const,
+          action_id: "vouch_edit",
+          text: { type: "plain_text" as const, text: "Edit" },
+          value: thread.id,
+        },
+        {
+          type: "button" as const,
+          action_id: "vouch_dismiss",
+          style: "danger" as const,
+          text: { type: "plain_text" as const, text: "Dismiss" },
+          value: thread.id,
+        },
+      ],
+    },
+  ];
+}
+
+async function sendNudge(thread: Thread) {
+  // personas aren't real users; the demo routes every nudge to one human
+  const target = process.env.VOUCH_ASSIGNEE_OVERRIDE;
+  if (!target) {
+    console.log(`   no VOUCH_ASSIGNEE_OVERRIDE set — nudge for '${thread.assignee}' not sent`);
+    return;
+  }
+  const dm = await app.client.conversations.open({ users: target });
+  await app.client.chat.postMessage({
+    channel: dm.channel!.id!,
+    text: thread.suggested_note ?? "Vouch: a doc section looks stale.",
+    blocks: nudgeBlocks(thread),
+  });
+  console.log(`   nudge DMed to ${target} (assignee: ${thread.assignee})`);
+}
+
+async function finalizeDm(
+  channelId: string,
+  ts: string,
+  text: string,
+) {
+  await app.client.chat.update({ channel: channelId, ts, text, blocks: [] });
+}
+
+app.action("vouch_accept", async ({ ack, body, action }) => {
+  await ack();
+  const threadId = (action as { value?: string }).value!;
+  const thread = getThread(threadId);
+  if (!thread || thread.status !== "open") return;
+
+  resolveThread(threadId, thread.suggested_note ?? "confirmed", thread.proposed_value ?? undefined);
+  writeProvenance({
+    sectionId: thread.section_id,
+    confirmedBy: body.user.id,
+    sourceThreadId: threadId,
+    sourceSlackRef: thread.source_signal ?? undefined,
+    humanConfirmed: true,
+  });
+  const b = body as unknown as { channel?: { id: string }; message?: { ts: string } };
+  if (b.channel && b.message) {
+    await finalizeDm(b.channel.id, b.message.ts, `✅ Confirmed — *${thread.section_id}* updated, section fresh.`);
+  }
+  console.log(`✅ thread ${threadId} accepted by ${body.user.id}`);
+});
+
+app.action("vouch_dismiss", async ({ ack, body, action }) => {
+  await ack();
+  const threadId = (action as { value?: string }).value!;
+  const thread = getThread(threadId);
+  if (!thread || thread.status !== "open") return;
+
+  dismissThread(threadId);
+  const b = body as unknown as { channel?: { id: string }; message?: { ts: string } };
+  if (b.channel && b.message) {
+    await finalizeDm(b.channel.id, b.message.ts, `Dismissed — *${thread.section_id}* back to fresh, doc untouched.`);
+  }
+  console.log(`🚫 thread ${threadId} dismissed by ${body.user.id}`);
+});
+
+app.action("vouch_edit", async ({ ack, body, action, client }) => {
+  await ack();
+  const threadId = (action as { value?: string }).value!;
+  const thread = getThread(threadId);
+  if (!thread || thread.status !== "open") return;
+
+  const b = body as unknown as {
+    trigger_id: string;
+    channel?: { id: string };
+    message?: { ts: string };
+  };
+  await client.views.open({
+    trigger_id: b.trigger_id,
+    view: {
+      type: "modal",
+      callback_id: "vouch_edit_submit",
+      private_metadata: JSON.stringify({
+        thread_id: threadId,
+        dm_channel: b.channel?.id,
+        dm_ts: b.message?.ts,
+      }),
+      title: { type: "plain_text", text: "Edit doc text" },
+      submit: { type: "plain_text", text: "Confirm" },
+      blocks: [
+        {
+          type: "input",
+          block_id: "value",
+          label: { type: "plain_text", text: "New section text" },
+          element: {
+            type: "plain_text_input",
+            action_id: "input",
+            multiline: true,
+            initial_value: thread.proposed_value ?? thread.suggested_note ?? "",
+          },
+        },
+      ],
+    },
+  });
+});
+
+app.view("vouch_edit_submit", async ({ ack, body, view }) => {
+  await ack();
+  const meta = JSON.parse(view.private_metadata) as {
+    thread_id: string;
+    dm_channel?: string;
+    dm_ts?: string;
+  };
+  const thread = getThread(meta.thread_id);
+  if (!thread || thread.status !== "open") return;
+
+  const edited = view.state.values.value.input.value ?? "";
+  resolveThread(meta.thread_id, `edited by human: ${thread.suggested_note ?? ""}`, edited);
+  writeProvenance({
+    sectionId: thread.section_id,
+    confirmedBy: body.user.id,
+    sourceThreadId: meta.thread_id,
+    sourceSlackRef: thread.source_signal ?? undefined,
+    humanConfirmed: true,
+  });
+  if (meta.dm_channel && meta.dm_ts) {
+    await finalizeDm(meta.dm_channel, meta.dm_ts, `✏️ Edited & confirmed — *${thread.section_id}* updated, section fresh.`);
+  }
+  console.log(`✏️ thread ${meta.thread_id} edited+confirmed by ${body.user.id}`);
 });
 
 await app.start();

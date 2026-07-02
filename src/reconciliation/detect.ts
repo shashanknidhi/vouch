@@ -17,6 +17,7 @@ export interface Detection {
   section_id: string | null;
   author: string | null;
   suggested_note: string | null;
+  proposed_value: string | null;
 }
 
 const SYSTEM_PROMPT = `You are Vouch, a documentation-freshness watchdog reading a Slack engineering channel.
@@ -37,10 +38,12 @@ A message settles a decision only if it commits the team to a change ("ship it",
 - References to a change that was already settled earlier in the context window. Only the message that SETTLES the change counts; later messages that mention, apply, or build on the new value are not new decisions.
 - Decisions about things the doc sections do not actually document. The settled fact must contradict or change specific text in a section's current doc text. A decision merely on the same general topic (e.g. a library upgrade in a channel that also discusses deploys) is NOT a match.
 
-If it is a decision, also draft a suggested_note: one short sentence stating old value → new value, phrased so the decision-maker can confirm it in ten seconds. Example: "Rate limit changed 60/min → 100/min. Confirm?"
+If it is a decision, also draft:
+- suggested_note: one short sentence stating old value → new value, phrased so the decision-maker can confirm it in ten seconds. Example: "Rate limit changed 60/min → 100/min. Confirm?"
+- proposed_value: the section's current doc text rewritten with ONLY the settled change applied. Keep the original style, structure, and length; change nothing else.
 
 Respond with ONLY a JSON object, no prose:
-{"is_decision": boolean, "section_id": string | null, "author": string | null, "suggested_note": string | null}
+{"is_decision": boolean, "section_id": string | null, "author": string | null, "suggested_note": string | null, "proposed_value": string | null}
 
 section_id must be one of the given section ids or null. author is the username of whoever made the call.`;
 
@@ -96,5 +99,6 @@ export async function detectDecision(
     section_id: parsed.section_id ?? null,
     author: parsed.author ?? null,
     suggested_note: parsed.suggested_note ?? null,
+    proposed_value: parsed.proposed_value ?? null,
   };
 }

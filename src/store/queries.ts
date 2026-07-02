@@ -24,11 +24,18 @@ export interface Provenance {
 export interface Thread {
   id: string;
   section_id: string;
-  status: "open" | "resolved";
+  status: "open" | "resolved" | "dismissed";
   source_signal: string | null;
   assignee: string | null;
   suggested_note: string | null;
+  proposed_value: string | null;
   resolution_note: string | null;
+}
+
+export function getThread(threadId: string) {
+  return db.prepare("SELECT * FROM threads WHERE id = ?").get(threadId) as
+    | Thread
+    | undefined;
 }
 
 export function getSection(sectionId: string) {
@@ -84,34 +91,50 @@ export function openThread(params: {
   sourceSignal?: string;
   assignee?: string;
   suggestedNote?: string;
+  proposedValue?: string;
 }) {
   const id = randomUUID();
   db.prepare(
-    `INSERT INTO threads (id, section_id, status, source_signal, assignee, suggested_note)
-     VALUES (?, ?, 'open', ?, ?, ?)`,
+    `INSERT INTO threads (id, section_id, status, source_signal, assignee, suggested_note, proposed_value)
+     VALUES (?, ?, 'open', ?, ?, ?, ?)`,
   ).run(
     id,
     params.sectionId,
     params.sourceSignal ?? null,
     params.assignee ?? null,
     params.suggestedNote ?? null,
+    params.proposedValue ?? null,
   );
   setFreshness(params.sectionId, "pending");
-  return db.prepare("SELECT * FROM threads WHERE id = ?").get(id) as Thread;
+  return getThread(id)!;
 }
 
-export function resolveThread(threadId: string, resolutionNote: string) {
-  const thread = db.prepare("SELECT * FROM threads WHERE id = ?").get(threadId) as
-    | Thread
-    | undefined;
+export function resolveThread(threadId: string, resolutionNote: string, newValue?: string) {
+  const thread = getThread(threadId);
   if (!thread) throw new Error(`thread not found: ${threadId}`);
 
   db.prepare(
     "UPDATE threads SET status = 'resolved', resolution_note = ? WHERE id = ?",
   ).run(resolutionNote, threadId);
+  if (newValue !== undefined) {
+    db.prepare("UPDATE sections SET current_value = ? WHERE id = ?").run(
+      newValue,
+      thread.section_id,
+    );
+  }
   setFreshness(thread.section_id, "fresh");
 
-  return db.prepare("SELECT * FROM threads WHERE id = ?").get(threadId) as Thread;
+  return getThread(threadId)!;
+}
+
+export function dismissThread(threadId: string) {
+  const thread = getThread(threadId);
+  if (!thread) throw new Error(`thread not found: ${threadId}`);
+
+  db.prepare("UPDATE threads SET status = 'dismissed' WHERE id = ?").run(threadId);
+  setFreshness(thread.section_id, "fresh");
+
+  return getThread(threadId)!;
 }
 
 export function writeProvenance(params: {
