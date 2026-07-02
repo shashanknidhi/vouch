@@ -68,6 +68,20 @@ export function getSectionsByChannel(slackChannelId: string) {
     .all(slackChannelId) as Section[];
 }
 
+export function listSections() {
+  return db.prepare("SELECT * FROM sections").all() as Section[];
+}
+
+export function listOpenThreads() {
+  return db.prepare("SELECT * FROM threads WHERE status = 'open'").all() as Thread[];
+}
+
+export function listProvenance(sectionId: string) {
+  return db
+    .prepare("SELECT * FROM provenance WHERE section_id = ? ORDER BY confirmed_at DESC")
+    .all(sectionId) as Provenance[];
+}
+
 export function listOpenThreadNotes() {
   return (
     db

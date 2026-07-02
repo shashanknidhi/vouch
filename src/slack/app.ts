@@ -5,6 +5,9 @@ import {
   getSectionsByChannel,
   getThread,
   listOpenThreadNotes,
+  listOpenThreads,
+  listProvenance,
+  listSections,
   openThread,
   resolveThread,
   dismissThread,
@@ -279,6 +282,68 @@ app.view("vouch_edit_submit", async ({ ack, body, view }) => {
     await finalizeDm(meta.dm_channel, meta.dm_ts, `✏️ Edited & confirmed — *${thread.section_id}* updated, section fresh.`);
   }
   console.log(`✏️ thread ${meta.thread_id} edited+confirmed by ${body.user.id}`);
+});
+
+const STATE_ICON = { fresh: "🟢", pending: "🟡", "stale-suspected": "🟠" } as const;
+
+async function slackLink(sourceSignal: string | null) {
+  // source_signal format: slack://CHANNEL/TS
+  const m = sourceSignal?.match(/^slack:\/\/([^/]+)\/(.+)$/);
+  if (!m) return null;
+  try {
+    const res = await app.client.chat.getPermalink({ channel: m[1], message_ts: m[2] });
+    return res.permalink ?? null;
+  } catch {
+    return null;
+  }
+}
+
+app.command("/vouch", async ({ ack, command, respond }) => {
+  await ack();
+  const [sub, ...rest] = command.text.trim().split(/\s+/);
+  const arg = rest.join(" ");
+
+  if (sub === "why" && arg) {
+    const query = arg.toLowerCase();
+    const section = listSections().find(
+      (s) => s.id.toLowerCase() === query || s.title.toLowerCase().includes(query),
+    );
+    if (!section) {
+      await respond(`No section matching "${arg}". Try \`/vouch status\` to see them all.`);
+      return;
+    }
+    const trail = listProvenance(section.id);
+    const lines = await Promise.all(
+      trail.map(async (p) => {
+        const thread = p.source_thread_id ? getThread(p.source_thread_id) : undefined;
+        const link = await slackLink(p.source_slack_ref);
+        const when = p.confirmed_at?.slice(0, 10) ?? "?";
+        const what = thread?.resolution_note ?? "confirmed";
+        return `• ${when} — ${what} — confirmed by <@${p.confirmed_by}>${link ? ` (<${link}|source>)` : ""}`;
+      }),
+    );
+    await respond(
+      `${STATE_ICON[section.freshness_state]} *${section.title}*\n` +
+        `>${(section.current_value ?? "_empty_").replaceAll("\n", "\n>")}\n\n` +
+        (lines.length
+          ? `*How it got here:*\n${lines.join("\n")}`
+          : "_No confirmations recorded yet — this text predates Vouch._"),
+    );
+    return;
+  }
+
+  // default: status
+  const open = listOpenThreads();
+  const lines = listSections().map((s) => {
+    const threads = open.filter((t) => t.section_id === s.id);
+    const detail = threads.length
+      ? `\n${threads.map((t) => `    ↳ awaiting ${t.assignee ?? "?"}: ${t.suggested_note ?? "open thread"}`).join("\n")}`
+      : "";
+    return `${STATE_ICON[s.freshness_state]} *${s.title}* — ${s.freshness_state}${detail}`;
+  });
+  await respond(
+    `*Doc status:*\n${lines.join("\n")}\n\n_\`/vouch why <section>\` shows any section's provenance trail._`,
+  );
 });
 
 await app.start();
