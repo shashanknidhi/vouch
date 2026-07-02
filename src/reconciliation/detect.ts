@@ -1,0 +1,84 @@
+import { llm, MODEL } from "./llm.js";
+
+export interface SectionInfo {
+  id: string;
+  title: string;
+  current_value: string;
+}
+
+export interface ChannelMessage {
+  ts: string;
+  user: string;
+  text: string;
+}
+
+export interface Detection {
+  is_decision: boolean;
+  section_id: string | null;
+  author: string | null;
+  suggested_note: string | null;
+}
+
+const SYSTEM_PROMPT = `You are Vouch, a documentation-freshness watchdog reading a Slack engineering channel.
+
+You are given:
+- The documented sections Vouch watches (id, title, and the doc's CURRENT text).
+- A window of recent channel messages for context.
+- One TARGET message to classify.
+
+Decide whether the TARGET message SETTLES a decision that makes one of the documented sections stale.
+
+A message settles a decision only if it commits the team to a change ("ship it", "decided", "moves to", "effective next week", "no longer need X"). These are NOT decisions:
+- Proposals, questions, or ideas still under discussion ("should we...", "propose 30?", "can we also...").
+- Technical recommendations or arguments, however confident ("actually we should set X to 15 or partners will see errors") — a recommendation is still a proposal until someone accepts it ("ok fine", "do it", "ship it"). The accepting message is the decision.
+- Deferrals ("let's discuss tomorrow").
+- Reports that a previously-made decision was executed ("deployed", "done").
+- Rejections or affirmations that keep a documented value unchanged ("hard no", "let's not", "leave it as is") — the doc is still correct.
+- References to a change that was already settled earlier in the context window. Only the message that SETTLES the change counts; later messages that mention, apply, or build on the new value are not new decisions.
+- Decisions about things the doc sections do not actually document. The settled fact must contradict or change specific text in a section's current doc text. A decision merely on the same general topic (e.g. a library upgrade in a channel that also discusses deploys) is NOT a match.
+
+If it is a decision, also draft a suggested_note: one short sentence stating old value → new value, phrased so the decision-maker can confirm it in ten seconds. Example: "Rate limit changed 60/min → 100/min. Confirm?"
+
+Respond with ONLY a JSON object, no prose:
+{"is_decision": boolean, "section_id": string | null, "author": string | null, "suggested_note": string | null}
+
+section_id must be one of the given section ids or null. author is the username of whoever made the call.`;
+
+export async function detectDecision(
+  target: ChannelMessage,
+  context: ChannelMessage[],
+  sections: SectionInfo[],
+  openThreadNotes: string[] = [],
+): Promise<Detection> {
+  const sectionsBlock = sections
+    .map((s) => `- id: ${s.id}\n  title: ${s.title}\n  current doc text: ${s.current_value}`)
+    .join("\n");
+  const contextBlock = context.map((m) => `[${m.user}]: ${m.text}`).join("\n");
+  const threadsBlock = openThreadNotes.length
+    ? `\n\n## Changes already tracked in open threads (do NOT re-flag these; a different change to the same section still counts)\n${openThreadNotes.map((n) => `- ${n}`).join("\n")}`
+    : "";
+
+  const res = await llm.chat.completions.create({
+    model: MODEL,
+    temperature: 0,
+    messages: [
+      { role: "system", content: SYSTEM_PROMPT },
+      {
+        role: "user",
+        content: `## Watched sections\n${sectionsBlock}${threadsBlock}\n\n## Recent context\n${contextBlock}\n\n## TARGET message\n[${target.user}]: ${target.text}`,
+      },
+    ],
+  });
+
+  const raw = res.choices[0]?.message?.content ?? "";
+  const match = raw.match(/\{[\s\S]*\}/);
+  if (!match) throw new Error(`no JSON in model output: ${raw}`);
+  const parsed = JSON.parse(match[0]);
+
+  return {
+    is_decision: Boolean(parsed.is_decision),
+    section_id: parsed.section_id ?? null,
+    author: parsed.author ?? null,
+    suggested_note: parsed.suggested_note ?? null,
+  };
+}

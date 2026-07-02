@@ -1,0 +1,67 @@
+{
+  "channel": "eng-api",
+  "sections": [
+    {
+      "id": "api-limits",
+      "title": "API Limits",
+      "current_value": "Rate limit: 60 requests/min per API key. Burst: 10 req/sec. Limits enforced at the gateway."
+    },
+    {
+      "id": "deploy-process",
+      "title": "Deploy Process",
+      "current_value": "Deploys go out Tuesdays and Thursdays at 10am PT via the deploy-bot. Rollbacks require an SRE approval."
+    },
+    {
+      "id": "oncall-rotation",
+      "title": "On-call Rotation",
+      "current_value": "Weekly rotation, handoff Mondays 9am PT. Primary + secondary. Escalation to EM after 15 min unacked."
+    }
+  ],
+  "messages": [
+    { "ts": "1001", "user": "priya", "text": "morning all, anyone else seeing elevated 429s on the partner endpoints?", "label": null },
+    { "ts": "1002", "user": "dev", "text": "yeah, Acme's integration is hammering us since their launch yesterday", "label": null },
+    { "ts": "1003", "user": "priya", "text": "should we bump the rate limit for them? 60/min is clearly not enough anymore", "label": null },
+    { "ts": "1004", "user": "marco", "text": "what do other partners at their tier get?", "label": null },
+    { "ts": "1005", "user": "dev", "text": "same 60/min, it's global not per-tier", "label": null },
+    { "ts": "1006", "user": "marco", "text": "ok let's just raise it globally. bump the rate limit to 100/min, ship it today", "label": { "section_id": "api-limits" } },
+    { "ts": "1007", "user": "priya", "text": "on it 👍", "label": null },
+    { "ts": "1008", "user": "sam", "text": "lunch anyone?", "label": null },
+    { "ts": "1009", "user": "dev", "text": "deployed the limit change, 429s dropping already", "label": null },
+    { "ts": "1010", "user": "tara", "text": "hey, deploy-bot failed on my branch twice with a timeout, known issue?", "label": null },
+    { "ts": "1011", "user": "marco", "text": "yeah CI runners are flaky today, infra is looking at it", "label": null },
+    { "ts": "1012", "user": "tara", "text": "should we consider deploying on Fridays too? backlog is piling up", "label": null },
+    { "ts": "1013", "user": "marco", "text": "no, Friday deploys are how we ruin weekends. hard no from me", "label": null },
+    { "ts": "1014", "user": "sam", "text": "agreed, keep it Tue/Thu", "label": null },
+    { "ts": "1015", "user": "priya", "text": "btw the burst limit — do we keep 10 req/sec with the new 100/min?", "label": null },
+    { "ts": "1016", "user": "marco", "text": "hm good question. 100/min with 10/sec burst is fine, leave burst as is", "label": null },
+    { "ts": "1017", "user": "dev", "text": "wait actually gateway config rounds to per-second buckets. 100/min means we should set burst to 15/sec or partners will still see 429s on spikes", "label": null },
+    { "ts": "1018", "user": "marco", "text": "ok fine — burst goes to 15 req/sec then. update the gateway config", "label": { "section_id": "api-limits" } },
+    { "ts": "1019", "user": "dev", "text": "done", "label": null },
+    { "ts": "1020", "user": "elena", "text": "team, heads up: I'm out next week, need someone to cover my on-call", "label": null },
+    { "ts": "1021", "user": "sam", "text": "I can take it", "label": null },
+    { "ts": "1022", "user": "elena", "text": "thanks sam! ❤️", "label": null },
+    { "ts": "1023", "user": "tara", "text": "unrelated — anyone have the staging DB password? asking for a friend", "label": null },
+    { "ts": "1024", "user": "marco", "text": "tara 😐 use the vault", "label": null },
+    { "ts": "1025", "user": "elena", "text": "while we're at it, 15 min unacked before escalation feels too short at night, I keep getting EM pings for blips", "label": null },
+    { "ts": "1026", "user": "sam", "text": "propose 30?", "label": null },
+    { "ts": "1027", "user": "elena", "text": "let's discuss in the SRE sync tomorrow, not decide here", "label": null },
+    { "ts": "1028", "user": "priya", "text": "fair", "label": null },
+    { "ts": "1029", "user": "dev", "text": "FYI wrote up the rate limit change in the incident doc", "label": null },
+    { "ts": "1030", "user": "marco", "text": "update from the SRE sync: escalation window moves from 15 to 30 minutes unacked, effective next rotation", "label": { "section_id": "oncall-rotation" } },
+    { "ts": "1031", "user": "elena", "text": "🎉 my sleep thanks you", "label": null },
+    { "ts": "1032", "user": "tara", "text": "deploy-bot question again — who approves rollbacks when no SRE is around?", "label": null },
+    { "ts": "1033", "user": "marco", "text": "good gap. decided with infra this morning: rollbacks no longer need SRE approval, any senior eng can approve", "label": { "section_id": "deploy-process" } },
+    { "ts": "1034", "user": "tara", "text": "nice, that unblocks me", "label": null },
+    { "ts": "1035", "user": "sam", "text": "did anyone see the game last night", "label": null },
+    { "ts": "1036", "user": "priya", "text": "sam we have #random for a reason", "label": null },
+    { "ts": "1037", "user": "dev", "text": "hypothetically if we went to 200/min would the gateway even handle it? just curious", "label": null },
+    { "ts": "1038", "user": "marco", "text": "it would, but let's not — 100 is plenty for now", "label": null },
+    { "ts": "1039", "user": "elena", "text": "reminder: handoff is Monday 9am as usual, sam you're primary next week", "label": null },
+    { "ts": "1040", "user": "tara", "text": "can we also move deploys to 11am? 10am collides with the all-hands on Thursdays", "label": null },
+    { "ts": "1041", "user": "sam", "text": "+1, I always miss the deploy window", "label": null },
+    { "ts": "1042", "user": "marco", "text": "ok, deploys move to 11am PT starting next week, same Tue/Thu cadence", "label": { "section_id": "deploy-process" } },
+    { "ts": "1043", "user": "priya", "text": "I'll update the calendar invite", "label": null },
+    { "ts": "1044", "user": "dev", "text": "anyone against upgrading node to 24 in the api repo? speak now", "label": null },
+    { "ts": "1045", "user": "tara", "text": "go for it", "label": null }
+  ]
+}
