@@ -76,6 +76,17 @@ export function listOpenThreads() {
   return db.prepare("SELECT * FROM threads WHERE status = 'open'").all() as Thread[];
 }
 
+export function listThreadSourceRefs(sectionId: string, status?: Thread["status"]) {
+  const rows = (
+    status
+      ? db
+          .prepare("SELECT source_signal FROM threads WHERE section_id = ? AND status = ?")
+          .all(sectionId, status)
+      : db.prepare("SELECT source_signal FROM threads WHERE section_id = ?").all(sectionId)
+  ) as { source_signal: string | null }[];
+  return rows.map((r) => r.source_signal).filter((s): s is string => s !== null);
+}
+
 export function listProvenance(sectionId: string) {
   return db
     .prepare("SELECT * FROM provenance WHERE section_id = ? ORDER BY confirmed_at DESC")

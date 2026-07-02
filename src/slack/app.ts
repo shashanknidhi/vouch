@@ -1,5 +1,6 @@
 import bolt from "@slack/bolt";
 import { detectDecision, type ChannelMessage } from "../reconciliation/detect.js";
+import { searchRelated, rtsEnabled, type RtsHit } from "../rts/search.js";
 import {
   getSection,
   getSectionsByChannel,
@@ -8,6 +9,7 @@ import {
   listOpenThreads,
   listProvenance,
   listSections,
+  listThreadSourceRefs,
   openThread,
   resolveThread,
   dismissThread,
@@ -95,6 +97,32 @@ app.event("message", async ({ event }) => {
     return;
   }
 
+  // RTS (assistant.search.context): gather related workspace discussion for
+  // the nudge, and guard against re-tracking a change whose settling message
+  // already has a thread (e.g. reprocessing after a listener restart)
+  let related: RtsHit[] = [];
+  if (rtsEnabled && detection.suggested_note) {
+    const query = detection.suggested_note.replace(/\s*Confirm\?$/i, "");
+    related = (await searchRelated(query)).filter(
+      (h) => !(h.channel === msg.channel && h.ts === msg.ts), // not the trigger itself
+    );
+    // same-ts reprocess guard checks ALL threads; related-hit guard checks only
+    // OPEN ones — a resolved thread is a finished change, not a block on new ones
+    const allRefs = new Set(listThreadSourceRefs(detection.section_id));
+    if (allRefs.has(`slack://${msg.channel}/${msg.ts}`)) {
+      console.log(`🔁 RTS dedupe: trigger message already has a thread, skipping`);
+      return;
+    }
+    const openRefs = new Set(listThreadSourceRefs(detection.section_id, "open"));
+    const alreadyTracked = related.find((h) => openRefs.has(`slack://${h.channel}/${h.ts}`));
+    if (alreadyTracked) {
+      console.log(
+        `🔁 RTS dedupe: related message ${alreadyTracked.ts} already spawned a thread for '${detection.section_id}', skipping`,
+      );
+      return;
+    }
+  }
+
   const thread = openThread({
     sectionId: detection.section_id,
     sourceSignal: `slack://${msg.channel}/${msg.ts}`,
@@ -104,12 +132,13 @@ app.event("message", async ({ event }) => {
   });
 
   console.log(
-    `🟡 thread ${thread.id} opened — section '${detection.section_id}' now pending`,
+    `🟡 thread ${thread.id} opened — section '${detection.section_id}' now pending` +
+      (related.length ? ` (${related.length} related via RTS)` : ""),
   );
-  await sendNudge(thread);
+  await sendNudge(thread, related);
 });
 
-function nudgeBlocks(thread: Thread) {
+function nudgeBlocks(thread: Thread, related: RtsHit[] = []) {
   const section = getSection(thread.section_id);
   return [
     {
@@ -129,6 +158,28 @@ function nudgeBlocks(thread: Thread) {
               type: "mrkdwn" as const,
               text: `*Doc will be updated to:*\n>${thread.proposed_value.replaceAll("\n", "\n>")}`,
             },
+          },
+        ]
+      : []),
+    ...(related.length
+      ? [
+          {
+            type: "context" as const,
+            elements: [
+              {
+                type: "mrkdwn" as const,
+                text:
+                  "*Related discussion:* " +
+                  related
+                    .slice(0, 3)
+                    .map((h, i) =>
+                      h.permalink
+                        ? `<${h.permalink}|${h.text.slice(0, 40).trim() || `message ${i + 1}`}…>`
+                        : h.text.slice(0, 60),
+                    )
+                    .join("  ·  "),
+              },
+            ],
           },
         ]
       : []),
@@ -160,7 +211,7 @@ function nudgeBlocks(thread: Thread) {
   ];
 }
 
-async function sendNudge(thread: Thread) {
+async function sendNudge(thread: Thread, related: RtsHit[] = []) {
   // personas aren't real users; the demo routes every nudge to one human
   const target = process.env.VOUCH_ASSIGNEE_OVERRIDE;
   if (!target) {
@@ -171,7 +222,7 @@ async function sendNudge(thread: Thread) {
   await app.client.chat.postMessage({
     channel: dm.channel!.id!,
     text: thread.suggested_note ?? "Vouch: a doc section looks stale.",
-    blocks: nudgeBlocks(thread),
+    blocks: nudgeBlocks(thread, related),
   });
   console.log(`   nudge DMed to ${target} (assignee: ${thread.assignee})`);
 }

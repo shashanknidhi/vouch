@@ -20,6 +20,7 @@
   },
   "oauth_config": {
     "scopes": {
+      "user": ["search:read.public"],
       "bot": [
         "channels:history",
         "channels:read",
