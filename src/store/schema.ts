@@ -23,6 +23,7 @@ export function applySchema(db: Database.Database) {
       source_signal TEXT,
       assignee TEXT,
       suggested_note TEXT,
+      proposed_value TEXT,
       resolution_note TEXT
     );
 
