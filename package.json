@@ -9,6 +9,7 @@
     "typecheck": "tsc --noEmit",
     "seed": "tsx src/store/seed.ts",
     "reset:notion": "tsx scripts/reset-notion.ts",
+    "wipe:channel": "tsx scripts/wipe-channel.ts",
     "mcp": "tsx src/mcp-server/index.ts",
     "inspect": "npx @modelcontextprotocol/inspector tsx src/mcp-server/index.ts",
     "eval": "tsx src/reconciliation/eval.ts",
