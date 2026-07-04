@@ -4,17 +4,20 @@
     {
       "id": "api-limits",
       "title": "API Limits",
-      "current_value": "Rate limit: 60 requests/min per API key. Burst: 10 req/sec. Limits enforced at the gateway."
+      "current_value": "Rate limit: 60 requests/min per API key. Burst: 10 req/sec. Limits enforced at the gateway.",
+      "notion_ref": "393d9ebc-1aed-818f-8a5a-fc2592f24e62"
     },
     {
       "id": "deploy-process",
       "title": "Deploy Process",
-      "current_value": "Deploys go out Tuesdays and Thursdays at 10am PT via the deploy-bot. Rollbacks require an SRE approval."
+      "current_value": "Deploys go out Tuesdays and Thursdays at 10am PT via the deploy-bot. Rollbacks require an SRE approval.",
+      "notion_ref": "393d9ebc-1aed-81eb-8214-f580bdfc8b12"
     },
     {
       "id": "oncall-rotation",
       "title": "On-call Rotation",
-      "current_value": "Weekly rotation, handoff Mondays 9am PT. Primary + secondary. Escalation to EM after 15 min unacked."
+      "current_value": "Weekly rotation, handoff Mondays 9am PT. Primary + secondary. Escalation to EM after 15 min unacked.",
+      "notion_ref": "393d9ebc-1aed-81a4-bf61-e7fa43a1c611"
     }
   ],
   "messages": [

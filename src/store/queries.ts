@@ -30,6 +30,7 @@ export interface Thread {
   suggested_note: string | null;
   proposed_value: string | null;
   resolution_note: string | null;
+  notion_pending_block: string | null;
 }
 
 export function getThread(threadId: string) {
@@ -150,6 +151,10 @@ export function resolveThread(threadId: string, resolutionNote: string, newValue
   setFreshness(thread.section_id, "fresh");
 
   return getThread(threadId)!;
+}
+
+export function setThreadNotionBlock(threadId: string, blockId: string) {
+  db.prepare("UPDATE threads SET notion_pending_block = ? WHERE id = ?").run(blockId, threadId);
 }
 
 export function dismissThread(threadId: string) {
