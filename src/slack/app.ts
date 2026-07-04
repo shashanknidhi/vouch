@@ -146,14 +146,42 @@ app.event("message", async ({ event }) => {
   await sendNudge(thread, related);
 });
 
-// Swap the Notion doc to the confirmed value + a provenance line, clearing the
-// pending callout. Non-fatal — the store write above is already authoritative.
+// best-effort Slack lookups so the Notion provenance reads for humans, not bot ids
+async function userName(userId: string): Promise<string> {
+  try {
+    const r = await app.client.users.info({ user: userId });
+    return r.user?.profile?.display_name || r.user?.real_name || userId;
+  } catch {
+    return userId;
+  }
+}
+
+async function sourcePermalink(sourceSignal: string | null): Promise<string | undefined> {
+  if (!sourceSignal?.startsWith("slack://")) return undefined;
+  const [channel, ts] = sourceSignal.replace("slack://", "").split("/");
+  if (!channel || !ts) return undefined;
+  try {
+    const r = await app.client.chat.getPermalink({ channel, message_ts: ts });
+    return r.permalink;
+  } catch {
+    return undefined;
+  }
+}
+
+// Swap the Notion doc to the confirmed value + a provenance line that names the
+// human who vouched and links back to the Slack message where it was decided.
+// Non-fatal — the store write above is already authoritative.
 async function notionResolve(thread: Thread, confirmedBy: string) {
   const sec = getSection(thread.section_id);
   if (!sec) return;
-  const when = new Date().toISOString().slice(0, 10);
-  const line = `Confirmed by ${confirmedBy} on ${when} · from Slack`;
-  await writeConfirmed(sec.section.doc_ref, sec.section.current_value ?? "", line, thread.notion_pending_block);
+  const [by, url] = await Promise.all([userName(confirmedBy), sourcePermalink(thread.source_signal)]);
+  const date = new Date().toISOString().slice(0, 10);
+  await writeConfirmed(
+    sec.section.doc_ref,
+    sec.section.current_value ?? "",
+    { by, date, url },
+    thread.notion_pending_block,
+  );
 }
 
 function nudgeBlocks(thread: Thread, related: RtsHit[] = []) {

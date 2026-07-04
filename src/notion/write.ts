@@ -43,8 +43,25 @@ async function parentOf(id: string): Promise<string> {
   return p;
 }
 
-function calloutBlock(emoji: string, text: string) {
-  return { object: "block", type: "callout", callout: { icon: { emoji }, rich_text: rt(text) } };
+function calloutBlock(emoji: string, richText: unknown[]) {
+  return { object: "block", type: "callout", callout: { icon: { emoji }, rich_text: richText } };
+}
+
+export interface ConfirmProvenance {
+  by: string; // human-readable name of who vouched
+  date: string; // YYYY-MM-DD
+  url?: string; // permalink to the Slack message where it was decided
+}
+
+// "Confirmed by Marco · 2026-07-04 · view in Slack" (last part linked if url given)
+function provenanceRichText(p: ConfirmProvenance) {
+  const parts: unknown[] = [{ type: "text", text: { content: `Confirmed by ${p.by} · ${p.date} · ` } }];
+  parts.push(
+    p.url
+      ? { type: "text", text: { content: "view in Slack", link: { url: p.url } } }
+      : { type: "text", text: { content: "from Slack" } },
+  );
+  return parts;
 }
 
 /** Append a "pending" callout right after the section's value block. Returns the
@@ -56,7 +73,7 @@ export async function markPending(docRef: string, note: string): Promise<string 
     const parent = await parentOf(id);
     const j = await call("PATCH", `/blocks/${parent}/children`, {
       after: id,
-      children: [calloutBlock("⏳", `Pending: ${note}`)],
+      children: [calloutBlock("⏳", rt(`Pending: ${note}`))],
     });
     return j.results?.[0]?.id ?? null;
   } catch (e) {
@@ -70,7 +87,7 @@ export async function markPending(docRef: string, note: string): Promise<string 
 export async function writeConfirmed(
   docRef: string,
   value: string,
-  provenanceLine: string,
+  prov: ConfirmProvenance,
   pendingBlockId?: string | null,
 ): Promise<void> {
   const id = blockId(docRef);
@@ -81,7 +98,7 @@ export async function writeConfirmed(
     const parent = await parentOf(id);
     await call("PATCH", `/blocks/${parent}/children`, {
       after: id,
-      children: [calloutBlock("✅", provenanceLine)],
+      children: [calloutBlock("✅", provenanceRichText(prov))],
     });
   } catch (e) {
     console.warn(`⚠️  Notion writeConfirmed failed (non-fatal): ${(e as Error).message}`);
