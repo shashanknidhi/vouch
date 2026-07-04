@@ -24,7 +24,9 @@ export function applySchema(db: Database.Database) {
       assignee TEXT,
       suggested_note TEXT,
       proposed_value TEXT,
-      resolution_note TEXT
+      resolution_note TEXT,
+      notion_pending_block TEXT,
+      base_value TEXT
     );
 
     CREATE TABLE IF NOT EXISTS provenance (

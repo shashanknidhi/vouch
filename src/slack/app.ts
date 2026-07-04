@@ -1,5 +1,5 @@
 import bolt from "@slack/bolt";
-import { detectDecision, type ChannelMessage } from "../reconciliation/detect.js";
+import { detectDecision, redraftValue, type ChannelMessage } from "../reconciliation/detect.js";
 import { searchRelated, rtsEnabled, type RtsHit } from "../rts/search.js";
 import {
   getSection,
@@ -14,8 +14,10 @@ import {
   resolveThread,
   dismissThread,
   writeProvenance,
+  setThreadNotionBlock,
   type Thread,
 } from "../store/queries.js";
+import { markPending, writeConfirmed, archiveBlock } from "../notion/write.js";
 
 try {
   process.loadEnvFile();
@@ -135,10 +137,57 @@ app.event("message", async ({ event }) => {
     `🟡 thread ${thread.id} opened — section '${detection.section_id}' now pending` +
       (related.length ? ` (${related.length} related via RTS)` : ""),
   );
+  // inject a pending callout into the Notion doc; remember its block id to swap on resolve
+  const sec = getSection(thread.section_id);
+  if (sec) {
+    const block = await markPending(sec.section.doc_ref, thread.suggested_note ?? "A change was detected.");
+    if (block) setThreadNotionBlock(thread.id, block);
+  }
   await sendNudge(thread, related);
 });
 
-function nudgeBlocks(thread: Thread, related: RtsHit[] = []) {
+// best-effort Slack lookups so the Notion provenance reads for humans, not bot ids
+async function userName(userId: string): Promise<string> {
+  try {
+    const r = await app.client.users.info({ user: userId });
+    return r.user?.profile?.display_name || r.user?.real_name || userId;
+  } catch {
+    return userId;
+  }
+}
+
+async function sourcePermalink(sourceSignal: string | null): Promise<string | undefined> {
+  if (!sourceSignal?.startsWith("slack://")) return undefined;
+  const [channel, ts] = sourceSignal.replace("slack://", "").split("/");
+  if (!channel || !ts) return undefined;
+  try {
+    const r = await app.client.chat.getPermalink({ channel, message_ts: ts });
+    return r.permalink;
+  } catch {
+    return undefined;
+  }
+}
+
+// Swap the Notion doc to the confirmed value + a provenance line that names the
+// human who vouched and links back to the Slack message where it was decided.
+// Non-fatal — the store write above is already authoritative.
+async function notionResolve(thread: Thread, confirmedBy: string) {
+  const sec = getSection(thread.section_id);
+  if (!sec) return;
+  const [by, url] = await Promise.all([userName(confirmedBy), sourcePermalink(thread.source_signal)]);
+  const date = new Date().toISOString().slice(0, 10);
+  // the change summary from the nudge, e.g. "Rate limit 60/min → 100/min"
+  const change = (thread.suggested_note ?? "Updated").replace(/\s*Confirm\?$/i, "").replace(/\.$/, "");
+  await writeConfirmed(
+    sec.section.doc_ref,
+    sec.section.current_value ?? "",
+    change,
+    { by, date, url },
+    thread.notion_pending_block,
+  );
+}
+
+function nudgeBlocks(thread: Thread, related: RtsHit[] = [], sourceUrl?: string) {
   const section = getSection(thread.section_id);
   return [
     {
@@ -150,6 +199,16 @@ function nudgeBlocks(thread: Thread, related: RtsHit[] = []) {
           `${thread.suggested_note ?? "A change was detected."}`,
       },
     },
+    ...(sourceUrl
+      ? [
+          {
+            type: "context" as const,
+            elements: [
+              { type: "mrkdwn" as const, text: `📌 Triggered by <${sourceUrl}|this message>` },
+            ],
+          },
+        ]
+      : []),
     ...(thread.proposed_value
       ? [
           {
@@ -219,10 +278,11 @@ async function sendNudge(thread: Thread, related: RtsHit[] = []) {
     return;
   }
   const dm = await app.client.conversations.open({ users: target });
+  const sourceUrl = await sourcePermalink(thread.source_signal);
   await app.client.chat.postMessage({
     channel: dm.channel!.id!,
     text: thread.suggested_note ?? "Vouch: a doc section looks stale.",
-    blocks: nudgeBlocks(thread, related),
+    blocks: nudgeBlocks(thread, related, sourceUrl),
   });
   console.log(`   nudge DMed to ${target} (assignee: ${thread.assignee})`);
 }
@@ -241,7 +301,16 @@ app.action("vouch_accept", async ({ ack, body, action }) => {
   const thread = getThread(threadId);
   if (!thread || thread.status !== "open") return;
 
-  resolveThread(threadId, thread.suggested_note ?? "confirmed", thread.proposed_value ?? undefined);
+  // If the section drifted since this thread opened (a concurrent same-section
+  // change already landed), re-apply THIS change onto the live value so we merge
+  // instead of clobbering. No drift → write exactly what the human saw.
+  let newValue = thread.proposed_value ?? undefined;
+  const live = getSection(thread.section_id)?.section.current_value ?? null;
+  if (thread.suggested_note && thread.base_value !== null && live !== null && live !== thread.base_value) {
+    newValue = await redraftValue(live, thread.suggested_note);
+    console.log(`   🔀 merged concurrent change into '${thread.section_id}'`);
+  }
+  resolveThread(threadId, thread.suggested_note ?? "confirmed", newValue);
   writeProvenance({
     sectionId: thread.section_id,
     confirmedBy: body.user.id,
@@ -249,6 +318,7 @@ app.action("vouch_accept", async ({ ack, body, action }) => {
     sourceSlackRef: thread.source_signal ?? undefined,
     humanConfirmed: true,
   });
+  await notionResolve(thread, body.user.id);
   const b = body as unknown as { channel?: { id: string }; message?: { ts: string } };
   if (b.channel && b.message) {
     await finalizeDm(b.channel.id, b.message.ts, `✅ Confirmed — *${thread.section_id}* updated, section fresh.`);
@@ -263,6 +333,7 @@ app.action("vouch_dismiss", async ({ ack, body, action }) => {
   if (!thread || thread.status !== "open") return;
 
   dismissThread(threadId);
+  await archiveBlock(thread.notion_pending_block);
   const b = body as unknown as { channel?: { id: string }; message?: { ts: string } };
   if (b.channel && b.message) {
     await finalizeDm(b.channel.id, b.message.ts, `Dismissed — *${thread.section_id}* back to fresh, doc untouched.`);
@@ -329,6 +400,7 @@ app.view("vouch_edit_submit", async ({ ack, body, view }) => {
     sourceSlackRef: thread.source_signal ?? undefined,
     humanConfirmed: true,
   });
+  await notionResolve(thread, body.user.id);
   if (meta.dm_channel && meta.dm_ts) {
     await finalizeDm(meta.dm_channel, meta.dm_ts, `✏️ Edited & confirmed — *${thread.section_id}* updated, section fresh.`);
   }

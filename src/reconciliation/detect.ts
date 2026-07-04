@@ -47,6 +47,25 @@ Respond with ONLY a JSON object, no prose:
 
 section_id must be one of the given section ids or null. author is the username of whoever made the call.`;
 
+// Re-apply a single settled change onto the CURRENT section text. Used at accept
+// time to merge a change when the section already drifted from what the thread's
+// proposed_value assumed (two concurrent decisions on one section).
+export async function redraftValue(currentValue: string, change: string): Promise<string> {
+  const res = await llm.chat.completions.create({
+    model: MODEL,
+    temperature: 0,
+    messages: [
+      {
+        role: "system",
+        content:
+          "You update one section of an engineering doc. Apply ONLY the described change to the current text. Keep the original style, structure, and length; change nothing else. Return ONLY the updated section text — no prose, no quotes, no code fences.",
+      },
+      { role: "user", content: `Current text:\n${currentValue}\n\nChange to apply:\n${change}` },
+    ],
+  });
+  return (res.choices[0]?.message?.content ?? currentValue).trim();
+}
+
 export async function detectDecision(
   target: ChannelMessage,
   context: ChannelMessage[],

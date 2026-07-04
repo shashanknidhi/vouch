@@ -30,6 +30,8 @@ export interface Thread {
   suggested_note: string | null;
   proposed_value: string | null;
   resolution_note: string | null;
+  notion_pending_block: string | null;
+  base_value: string | null; // section value when this thread opened, to detect concurrent drift
 }
 
 export function getThread(threadId: string) {
@@ -119,9 +121,13 @@ export function openThread(params: {
   proposedValue?: string;
 }) {
   const id = randomUUID();
+  const baseValue =
+    (db.prepare("SELECT current_value FROM sections WHERE id = ?").get(params.sectionId) as
+      | { current_value: string | null }
+      | undefined)?.current_value ?? null;
   db.prepare(
-    `INSERT INTO threads (id, section_id, status, source_signal, assignee, suggested_note, proposed_value)
-     VALUES (?, ?, 'open', ?, ?, ?, ?)`,
+    `INSERT INTO threads (id, section_id, status, source_signal, assignee, suggested_note, proposed_value, base_value)
+     VALUES (?, ?, 'open', ?, ?, ?, ?, ?)`,
   ).run(
     id,
     params.sectionId,
@@ -129,6 +135,7 @@ export function openThread(params: {
     params.assignee ?? null,
     params.suggestedNote ?? null,
     params.proposedValue ?? null,
+    baseValue,
   );
   setFreshness(params.sectionId, "pending");
   return getThread(id)!;
@@ -150,6 +157,10 @@ export function resolveThread(threadId: string, resolutionNote: string, newValue
   setFreshness(thread.section_id, "fresh");
 
   return getThread(threadId)!;
+}
+
+export function setThreadNotionBlock(threadId: string, blockId: string) {
+  db.prepare("UPDATE threads SET notion_pending_block = ? WHERE id = ?").run(blockId, threadId);
 }
 
 export function dismissThread(threadId: string) {
