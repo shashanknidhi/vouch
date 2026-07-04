@@ -13,13 +13,24 @@ const H = () => ({
   "Content-Type": "application/json",
 });
 
+const CHANGELOG_TITLE = "Changelog";
 const rt = (content: string) => [{ type: "text", text: { content } }];
+const noDashes = (id: string) => id.replaceAll("-", "");
+// Notion's link-to-block anchor: page url + #<blockId without dashes>
+const anchor = (pageId: string, blockId: string) =>
+  `https://www.notion.so/${noDashes(pageId)}#${noDashes(blockId)}`;
 
 // doc_ref holds a real block id once seeded from notion_ref; a placeholder
 // (notion://TODO/...) means Notion isn't wired for this section.
 function blockId(docRef: string): string | null {
   if (!key() || docRef.startsWith("notion://")) return null;
   return docRef;
+}
+
+interface NotionBlock {
+  id: string;
+  type: string;
+  [k: string]: unknown;
 }
 
 async function call(method: string, path: string, body?: unknown) {
@@ -30,7 +41,7 @@ async function call(method: string, path: string, body?: unknown) {
   });
   if (!res.ok) throw new Error(`Notion ${method} ${path} → ${res.status} ${await res.text()}`);
   return res.json() as Promise<{
-    results?: { id: string }[];
+    results?: NotionBlock[];
     parent?: { page_id?: string; block_id?: string };
   }>;
 }
@@ -53,17 +64,6 @@ export interface ConfirmProvenance {
   url?: string; // permalink to the Slack message where it was decided
 }
 
-// "Confirmed by Marco · 2026-07-04 · view in Slack" (last part linked if url given)
-function provenanceRichText(p: ConfirmProvenance) {
-  const parts: unknown[] = [{ type: "text", text: { content: `Confirmed by ${p.by} · ${p.date} · ` } }];
-  parts.push(
-    p.url
-      ? { type: "text", text: { content: "view in Slack", link: { url: p.url } } }
-      : { type: "text", text: { content: "from Slack" } },
-  );
-  return parts;
-}
-
 /** Append a "pending" callout right after the section's value block. Returns the
  *  callout's block id (to archive on resolve), or null if Notion is off/failed. */
 export async function markPending(docRef: string, note: string): Promise<string | null> {
@@ -82,24 +82,67 @@ export async function markPending(docRef: string, note: string): Promise<string 
   }
 }
 
+// Ensure a "Changelog" heading exists at the bottom of the page; entries append
+// below it. ponytail: assumes Changelog is the last section (true for our doc).
+async function ensureChangelog(pageId: string): Promise<void> {
+  const kids = await call("GET", `/blocks/${pageId}/children?page_size=100`);
+  const exists = kids.results?.some(
+    (b) => b.type === "heading_1" && (b.heading_1 as any)?.rich_text?.[0]?.plain_text === CHANGELOG_TITLE,
+  );
+  if (exists) return;
+  await call("PATCH", `/blocks/${pageId}/children`, {
+    children: [
+      { object: "block", type: "divider", divider: {} },
+      { object: "block", type: "heading_1", heading_1: { rich_text: rt(CHANGELOG_TITLE) } },
+    ],
+  });
+}
+
+// Append a changelog entry (bulleted) and return its block id (link target).
+async function appendChangelogEntry(
+  pageId: string,
+  change: string,
+  prov: ConfirmProvenance,
+): Promise<string | null> {
+  const richText: unknown[] = [
+    { type: "text", text: { content: `${change} — ${prov.by} · ${prov.date} · ` } },
+    prov.url
+      ? { type: "text", text: { content: "view in Slack", link: { url: prov.url } } }
+      : { type: "text", text: { content: "from Slack" } },
+  ];
+  const j = await call("PATCH", `/blocks/${pageId}/children`, {
+    children: [{ object: "block", type: "bulleted_list_item", bulleted_list_item: { rich_text: richText } }],
+  });
+  return j.results?.[0]?.id ?? null;
+}
+
 /** On resolve: overwrite the value block with the confirmed text, drop the
- *  pending callout, and append a provenance callout. Best-effort. */
+ *  pending callout, append a Changelog entry, and give the value line a subtle
+ *  gray "↗ changelog" link that jumps to that entry. Best-effort. */
 export async function writeConfirmed(
   docRef: string,
   value: string,
+  change: string,
   prov: ConfirmProvenance,
   pendingBlockId?: string | null,
 ): Promise<void> {
   const id = blockId(docRef);
   if (!id) return;
   try {
-    await call("PATCH", `/blocks/${id}`, { paragraph: { rich_text: rt(value) } });
+    const pageId = await parentOf(id);
     if (pendingBlockId) await call("DELETE", `/blocks/${pendingBlockId}`);
-    const parent = await parentOf(id);
-    await call("PATCH", `/blocks/${parent}/children`, {
-      after: id,
-      children: [calloutBlock("✅", provenanceRichText(prov))],
-    });
+    await ensureChangelog(pageId);
+    const entryId = await appendChangelogEntry(pageId, change, prov);
+    const marker = entryId
+      ? [
+          {
+            type: "text",
+            text: { content: "  ↗ changelog", link: { url: anchor(pageId, entryId) } },
+            annotations: { color: "gray" },
+          },
+        ]
+      : [];
+    await call("PATCH", `/blocks/${id}`, { paragraph: { rich_text: [...rt(value), ...marker] } });
   } catch (e) {
     console.warn(`⚠️  Notion writeConfirmed failed (non-fatal): ${(e as Error).message}`);
   }

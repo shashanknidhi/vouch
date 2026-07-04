@@ -31,9 +31,12 @@ for (const s of fixture.sections) {
 }
 
 if (page) {
+  // reverting the value blocks above already strips the gray "↗ changelog"
+  // marker; here we clear the Changelog section + any leftover callouts.
+  const junk = new Set(["callout", "bulleted_list_item", "divider", "heading_1"]);
   const kids = (await (await fetch(`https://api.notion.com/v1/blocks/${page}/children?page_size=100`, { headers: H })).json()) as any;
-  for (const b of kids.results.filter((b: any) => b.type === "callout")) {
+  for (const b of kids.results.filter((b: any) => junk.has(b.type))) {
     await fetch(`https://api.notion.com/v1/blocks/${b.id}`, { method: "DELETE", headers: H });
   }
-  console.log("cleared callouts");
+  console.log("cleared changelog + callouts");
 }

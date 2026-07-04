@@ -176,9 +176,12 @@ async function notionResolve(thread: Thread, confirmedBy: string) {
   if (!sec) return;
   const [by, url] = await Promise.all([userName(confirmedBy), sourcePermalink(thread.source_signal)]);
   const date = new Date().toISOString().slice(0, 10);
+  // the change summary from the nudge, e.g. "Rate limit 60/min → 100/min"
+  const change = (thread.suggested_note ?? "Updated").replace(/\s*Confirm\?$/i, "").replace(/\.$/, "");
   await writeConfirmed(
     sec.section.doc_ref,
     sec.section.current_value ?? "",
+    change,
     { by, date, url },
     thread.notion_pending_block,
   );
