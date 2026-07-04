@@ -187,7 +187,7 @@ async function notionResolve(thread: Thread, confirmedBy: string) {
   );
 }
 
-function nudgeBlocks(thread: Thread, related: RtsHit[] = []) {
+function nudgeBlocks(thread: Thread, related: RtsHit[] = [], sourceUrl?: string) {
   const section = getSection(thread.section_id);
   return [
     {
@@ -199,6 +199,16 @@ function nudgeBlocks(thread: Thread, related: RtsHit[] = []) {
           `${thread.suggested_note ?? "A change was detected."}`,
       },
     },
+    ...(sourceUrl
+      ? [
+          {
+            type: "context" as const,
+            elements: [
+              { type: "mrkdwn" as const, text: `📌 Triggered by <${sourceUrl}|this message>` },
+            ],
+          },
+        ]
+      : []),
     ...(thread.proposed_value
       ? [
           {
@@ -268,10 +278,11 @@ async function sendNudge(thread: Thread, related: RtsHit[] = []) {
     return;
   }
   const dm = await app.client.conversations.open({ users: target });
+  const sourceUrl = await sourcePermalink(thread.source_signal);
   await app.client.chat.postMessage({
     channel: dm.channel!.id!,
     text: thread.suggested_note ?? "Vouch: a doc section looks stale.",
-    blocks: nudgeBlocks(thread, related),
+    blocks: nudgeBlocks(thread, related, sourceUrl),
   });
   console.log(`   nudge DMed to ${target} (assignee: ${thread.assignee})`);
 }
