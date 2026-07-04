@@ -1,5 +1,5 @@
 import bolt from "@slack/bolt";
-import { detectDecision, type ChannelMessage } from "../reconciliation/detect.js";
+import { detectDecision, redraftValue, type ChannelMessage } from "../reconciliation/detect.js";
 import { searchRelated, rtsEnabled, type RtsHit } from "../rts/search.js";
 import {
   getSection,
@@ -301,7 +301,16 @@ app.action("vouch_accept", async ({ ack, body, action }) => {
   const thread = getThread(threadId);
   if (!thread || thread.status !== "open") return;
 
-  resolveThread(threadId, thread.suggested_note ?? "confirmed", thread.proposed_value ?? undefined);
+  // If the section drifted since this thread opened (a concurrent same-section
+  // change already landed), re-apply THIS change onto the live value so we merge
+  // instead of clobbering. No drift → write exactly what the human saw.
+  let newValue = thread.proposed_value ?? undefined;
+  const live = getSection(thread.section_id)?.section.current_value ?? null;
+  if (thread.suggested_note && thread.base_value !== null && live !== null && live !== thread.base_value) {
+    newValue = await redraftValue(live, thread.suggested_note);
+    console.log(`   🔀 merged concurrent change into '${thread.section_id}'`);
+  }
+  resolveThread(threadId, thread.suggested_note ?? "confirmed", newValue);
   writeProvenance({
     sectionId: thread.section_id,
     confirmedBy: body.user.id,
