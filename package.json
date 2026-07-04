@@ -10,11 +10,11 @@
     "seed": "tsx src/store/seed.ts",
     "reset:notion": "tsx scripts/reset-notion.ts",
     "wipe:channel": "tsx scripts/wipe-channel.ts",
+    "demo": "tsx scripts/wipe-channel.ts && rm -f vouch.db && tsx src/store/seed.ts && tsx scripts/reset-notion.ts && tsx scripts/replay.ts fixtures/demo-buildup.json --delay 1500 && tsx src/slack/app.ts",
     "mcp": "tsx src/mcp-server/index.ts",
     "inspect": "npx @modelcontextprotocol/inspector tsx src/mcp-server/index.ts",
     "eval": "tsx src/reconciliation/eval.ts",
     "slack": "tsx src/slack/app.ts",
-    "demo": "rm -f vouch.db && tsx src/store/seed.ts && tsx scripts/replay.ts fixtures/demo-buildup.json --delay 1500 && tsx src/slack/app.ts",
     "replay": "tsx scripts/replay.ts"
   },
   "dependencies": {
