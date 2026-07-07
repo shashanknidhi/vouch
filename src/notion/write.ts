@@ -33,7 +33,7 @@ interface NotionBlock {
   [k: string]: unknown;
 }
 
-async function call(method: string, path: string, body?: unknown) {
+export async function call(method: string, path: string, body?: unknown) {
   const res = await fetch(`${BASE}${path}`, {
     method,
     headers: H(),
@@ -43,6 +43,8 @@ async function call(method: string, path: string, body?: unknown) {
   return res.json() as Promise<{
     results?: NotionBlock[];
     parent?: { page_id?: string; block_id?: string };
+    has_more?: boolean;
+    next_cursor?: string | null;
   }>;
 }
 

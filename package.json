@@ -8,6 +8,8 @@
     "build": "tsc",
     "typecheck": "tsc --noEmit",
     "seed": "tsx src/store/seed.ts",
+    "import": "tsx src/notion/import.ts",
+    "import:all": "tsx src/notion/import.ts --all",
     "reset:notion": "tsx scripts/reset-notion.ts",
     "wipe:channel": "tsx scripts/wipe-channel.ts",
     "demo": "tsx scripts/wipe-channel.ts && rm -f vouch.db && tsx src/store/seed.ts && tsx scripts/reset-notion.ts && tsx scripts/replay.ts fixtures/demo-buildup.json --delay 1500 && tsx src/slack/app.ts",

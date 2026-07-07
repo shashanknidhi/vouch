@@ -13,7 +13,7 @@
       {
         "command": "/vouch",
         "description": "Ask what's stale, or why the doc says what it says",
-        "usage_hint": "status | why <section>",
+        "usage_hint": "status | why <section> | sync",
         "should_escape": false
       }
     ]
@@ -24,6 +24,7 @@
       "bot": [
         "channels:history",
         "channels:read",
+        "channels:join",
         "chat:write",
         "chat:write.customize",
         "im:write",
@@ -34,7 +35,7 @@
   },
   "settings": {
     "event_subscriptions": {
-      "bot_events": ["message.channels"]
+      "bot_events": ["message.channels", "channel_created"]
     },
     "interactivity": {
       "is_enabled": true
