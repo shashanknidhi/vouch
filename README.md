@@ -1,3 +1,5 @@
+![vouch — Slack decides. A human vouches. The doc stays honest.](assets/banner.png)
+
 # vouch
 
 Slack agent that keeps docs honestly fresh — catches decisions in Slack, gets a human to vouch, writes them back with provenance.
