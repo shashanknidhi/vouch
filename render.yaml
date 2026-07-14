@@ -1,0 +1,33 @@
+services:
+  - type: worker
+    name: vouch
+    runtime: node
+    plan: starter
+    buildCommand: npm ci && npm run build
+    # ponytail: seed on every boot (INSERT OR REPLACE, idempotent) so a fresh
+    # instance always has sections/bindings. DB lives on a disk so vouch
+    # threads/provenance survive deploys.
+    startCommand: node dist/store/seed.js && node dist/slack/app.js
+    disk:
+      name: vouch-db
+      mountPath: /data
+      sizeGB: 1
+    envVars:
+      - key: DB_PATH
+        value: /data/vouch.db
+      - key: SLACK_BOT_TOKEN
+        sync: false
+      - key: SLACK_APP_TOKEN
+        sync: false
+      - key: SLACK_USER_TOKEN
+        sync: false
+      - key: SLACK_CHANNEL_ID
+        sync: false
+      - key: NOTION_API_KEY
+        sync: false
+      - key: OLLAMA_BASE_URL
+        sync: false
+      - key: OLLAMA_API_KEY
+        sync: false
+      - key: OLLAMA_MODEL
+        sync: false
