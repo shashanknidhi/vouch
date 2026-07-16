@@ -3,7 +3,6 @@ import { detectDecision, redraftValue, type ChannelMessage } from "../reconcilia
 import { searchRelated, rtsEnabled, type RtsHit } from "../rts/search.js";
 import {
   getSection,
-  getSectionsByChannel,
   getThread,
   listOpenThreadNotes,
   listOpenThreads,
@@ -18,6 +17,8 @@ import {
   type Thread,
 } from "../store/queries.js";
 import { markPending, writeConfirmed, archiveBlock } from "../notion/write.js";
+import { importWorkspace } from "../notion/import.js";
+import { startWebhookServer } from "../notion/webhook.js";
 
 try {
   process.loadEnvFile();
@@ -48,6 +49,43 @@ async function resolveName(userId: string | undefined, username: string | undefi
   return userNames.get(userId)!;
 }
 
+// Join every public channel so Slack delivers its messages (message.channels
+// only fires for channels the bot is a member of). Best-effort per channel.
+async function joinAllPublicChannels() {
+  let cursor: string | undefined;
+  let joined = 0;
+  do {
+    const res = await app.client.conversations.list({
+      types: "public_channel",
+      exclude_archived: true,
+      limit: 200,
+      cursor,
+    });
+    for (const c of res.channels ?? []) {
+      if (c.is_member || !c.id) continue;
+      try {
+        await app.client.conversations.join({ channel: c.id });
+        joined++;
+      } catch (e) {
+        console.warn(`⚠️  couldn't join #${c.name}: ${(e as Error).message}`);
+      }
+    }
+    cursor = res.response_metadata?.next_cursor || undefined;
+  } while (cursor);
+  console.log(`📡 joined ${joined} new public channel(s)`);
+}
+
+// Auto-join newly created public channels so coverage stays complete.
+app.event("channel_created", async ({ event }) => {
+  const id = (event as { channel?: { id?: string } }).channel?.id;
+  if (!id) return;
+  try {
+    await app.client.conversations.join({ channel: id });
+  } catch (e) {
+    console.warn(`⚠️  couldn't join new channel ${id}: ${(e as Error).message}`);
+  }
+});
+
 app.event("message", async ({ event }) => {
   const msg = event as {
     channel: string;
@@ -63,8 +101,13 @@ app.event("message", async ({ event }) => {
   if (msg.subtype && msg.subtype !== "bot_message") return;
   if (!msg.text) return;
 
-  const sections = getSectionsByChannel(msg.channel);
-  if (sections.length === 0) return; // not a bound channel
+  // workspace-global routing: any public channel's decisions match against every
+  // doc section. ponytail: at small scale, running the detector on every message
+  // with all sections in the prompt is fine. If volume/section-count bites, add
+  // (a) a cheap regex decision-gate before the LLM call, (b) a title-match
+  // pre-filter to shrink the candidate set.
+  const sections = listSections();
+  if (sections.length === 0) return; // nothing imported yet
 
   const history = await app.client.conversations.history({
     channel: msg.channel,
@@ -426,6 +469,17 @@ app.command("/vouch", async ({ ack, command, respond }) => {
   const [sub, ...rest] = command.text.trim().split(/\s+/);
   const arg = rest.join(" ");
 
+  if (sub === "sync") {
+    await respond("Rescanning Notion for new/changed docs…");
+    try {
+      const { sections } = await importWorkspace();
+      await respond(`Synced ${sections.length} section(s) from Notion.`);
+    } catch (e) {
+      await respond(`Sync failed: ${(e as Error).message}`);
+    }
+    return;
+  }
+
   if (sub === "why" && arg) {
     const query = arg.toLowerCase();
     const section = listSections().find(
@@ -471,3 +525,5 @@ app.command("/vouch", async ({ ack, command, respond }) => {
 
 await app.start();
 console.log("⚡ vouch listening (socket mode)");
+startWebhookServer();
+await joinAllPublicChannels();
